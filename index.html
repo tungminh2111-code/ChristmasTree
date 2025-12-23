@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Merry Christmas 2025</title>
     <style>
         body { 
@@ -10,6 +10,7 @@
             overflow: hidden; 
             background-color: #000000;
             font-family: 'Times New Roman', Times, serif;
+            touch-action: none; 
         }
         
         #ui-container {
@@ -31,23 +32,20 @@
             margin: 0;
             font-weight: lighter;
         }
+        
+        @media only screen and (max-width: 600px) {
+            h1 { font-size: 1.8rem; }
+            h2 { font-size: 1rem; }
+        }
+
         h2 {
-            font-size: 1.7rem;
+            font-size: 1.6rem;
             margin-top: 10px;
             font-weight: lighter;
             opacity: 0.8;
-            font-family: sans-serif;
+            font-family: Brush Script MT, cursive;
         }
 
-        #instructions {
-            color: #666;
-            font-size: 0.8rem;
-            margin-top: 20px;
-            font-family: sans-serif;
-            opacity: 0.5;
-        }
-
-        /* Modal for displaying Gift Images */
         #image-modal {
             display: none; 
             position: fixed;
@@ -77,16 +75,11 @@
         }
 
         #message {
-        /* 1. Set the transition speed (e.g., 1 second fade) */
-        transition: opacity 1s ease-in-out;
-        opacity: 1; /* Start visible */
+            transition: opacity 1s ease-in-out;
+            opacity: 1; 
         }
 
-        /* This class will be added/removed by JS to trigger the fade */
-        .fade-out {
-            opacity: 0 !important;
-        }
-
+        .fade-out { opacity: 0 !important; }
         canvas { display: block; }
     </style>
     <script type="importmap">
@@ -102,9 +95,7 @@
 
     <div id="ui-container">
         <h1>🎄 Merry Christmas 🎄</h1>
-        <h2 id = "message"> Chúc em luôn yêu đời </h2>
-        <div id="instructions">
-        </div>
+        <h2 id="message">Chúc em luôn yêu đời</h2>
     </div>
 
     <div id="image-modal">
@@ -112,7 +103,7 @@
     </div>
 
     <audio id="bg-music" loop>
-        <source src="./khongthoigian.mp3" type="audio/mp3">
+        <source src="media/khongthoigian.mp3" type="audio/mp3">
     </audio>
 
     <script type="module">
@@ -126,235 +117,183 @@
         import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
         import gsap from 'https://unpkg.com/gsap@3.12.5/index.js';
 
-        // --- GIFT CONFIGURATION (REPLACE THESE LINKS) ---
+        // --- 1. DETECT DEVICE ---
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 800;
+        
+        // --- 2. CONFIGURATION ---
+        const CONFIG = {
+            PARTICLE_COUNT: isMobile ? 6000 : 15000,
+            SNOW_COUNT: isMobile ? 500 : 1000,
+            FLAKE_COUNT: isMobile ? 50 : 100,
+            ENABLE_BLOOM: !isMobile, 
+            PARTICLE_SIZE: isMobile ? 0.6 : 0.3,
+            CAMERA_Z: isMobile ? 70 : 55
+        };
+
         const GIFT_IMAGES = [
-            './img/camera.png', 
-            './img/pub.png', 
-            './img/dinner.png',
-            './img/ninhbinh.png',
-            './img/travel.png', 
-            './img/giangsinh.png'
+            './img/camera.png', './img/pub.png', './img/dinner.png',
+            './img/ninhbinh.png', './img/travel.png', './img/giangsinh.png'
         ];
 
-        // --- Configuration ---
-        const PARTICLE_COUNT = 15000;
-        const SNOW_COUNT = 1000;
-        const FLAKE_COUNT = 100; 
         const TARGET_COLOR = new THREE.Color(0xffedcc); 
-
         const STATES = { TREE: 0, EXPLODED: 1, TEXT: 2, RESET: 3 };
         let currentState = STATES.TREE;
         let isLightUpComplete = false; 
 
-        // --- Scene Setup ---
+        // --- SCENE SETUP ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x000000, 0.015);
+        scene.fog = new THREE.FogExp2(0x000000, isMobile ? 0.02 : 0.015);
 
         const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 1000);
-        camera.position.set(0, 5, 55);
+        camera.position.set(0, 5, CONFIG.CAMERA_Z);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        const renderer = new THREE.WebGLRenderer({ antialias: isMobile }); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
-
-        // --- Interaction Setup (Raycaster) ---
+        
         const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-
-        // --- Post Processing ---
-        const renderScene = new RenderPass(scene, camera);
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.8, 0.1);
-        const composer = new EffectComposer(renderer);
-        composer.addPass(renderScene);
-        composer.addPass(bloomPass);
-
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.autoRotate = false; 
         controls.maxPolarAngle = Math.PI / 1.8;
+        if(isMobile) controls.enablePan = false; 
+        
+        // --- AUTO ROTATE CONFIG ---
+        controls.autoRotate = false; 
+        controls.autoRotateSpeed = 0.3; 
+
+        let composer;
+        if (CONFIG.ENABLE_BLOOM) {
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.8, 0.1);
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+        }
 
         const ambientLight = new THREE.AmbientLight(0x111111);
-        // Add a directional light to make the gifts shine
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
         dirLight.position.set(10, 10, 10);
         scene.add(ambientLight);
         scene.add(dirLight);
 
-        // --- Materials ---
+        // --- ASSETS ---
         const textureLoader = new THREE.TextureLoader();
         const particleSprite = textureLoader.load('https://threejs.org/examples/textures/sprites/disc.png');
         const flakeTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/sprites/snowflake2.png');
         
-        // NEW: Wrapping Paper Texture
-        const giftTexture = textureLoader.load('https://i.imgur.com/8Qjh85b.jpg'); // A festive pattern
+        // FIXED: Replaced Imgur link with a stable texture link
+        const giftTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/crate.gif');
         giftTexture.wrapS = giftTexture.wrapT = THREE.RepeatWrapping;
         giftTexture.repeat.set(2, 2);
 
+        // --- PARTICLES ---
         const particleMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.3,
-            map: particleSprite,
-            transparent: true,
-            opacity: 0.5, 
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            vertexColors: true,
-            sizeAttenuation: true
+            color: 0xffffff, size: CONFIG.PARTICLE_SIZE, map: particleSprite, transparent: true,
+            opacity: isMobile ? 0.8 : 0.5, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true, sizeAttenuation: true
         });
 
-        // --- System 1: Tree ---
         const treeGeometry = new THREE.BufferGeometry();
-        const treePositions = new Float32Array(PARTICLE_COUNT * 3);
-        const explodedPositions = new Float32Array(PARTICLE_COUNT * 3);
-        const textPositions = new Float32Array(PARTICLE_COUNT * 3);
-        const blinkOffsets = new Float32Array(PARTICLE_COUNT); 
-
-        const currentPositionsAttribute = new THREE.BufferAttribute(new Float32Array(PARTICLE_COUNT * 3), 3);
-        const colorsAttribute = new THREE.BufferAttribute(new Float32Array(PARTICLE_COUNT * 3), 3);
+        const treePositions = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
+        const explodedPositions = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
+        const textPositions = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
+        const blinkOffsets = new Float32Array(CONFIG.PARTICLE_COUNT); 
+        const currentPositionsAttribute = new THREE.BufferAttribute(new Float32Array(CONFIG.PARTICLE_COUNT * 3), 3);
+        const colorsAttribute = new THREE.BufferAttribute(new Float32Array(CONFIG.PARTICLE_COUNT * 3), 3);
         
         treeGeometry.setAttribute('position', currentPositionsAttribute);
         treeGeometry.setAttribute('color', colorsAttribute);
-        
         const particleSystem = new THREE.Points(treeGeometry, particleMaterial);
         scene.add(particleSystem);
 
-        // --- System 2: Ground ---
         const groundGeo = new THREE.BufferGeometry();
         const groundPos = [];
-        for(let i=0; i<10000; i++) {
+        for(let i=0; i< (isMobile ? 5000 : 10000); i++) {
              const radius = 10 + Math.random() * 30;
              const angle = Math.random() * Math.PI * 2;
              groundPos.push(Math.cos(angle) * radius, -12.5 + (Math.random()-0.5)*0.5, Math.sin(angle) * radius);
         }
         groundGeo.setAttribute('position', new THREE.Float32BufferAttribute(groundPos, 3));
         const groundMaterial = particleMaterial.clone();
-        groundMaterial.size = 0.2;
-        groundMaterial.opacity = 0.3;
-        groundMaterial.vertexColors = false;
-        groundMaterial.color = TARGET_COLOR;
+        groundMaterial.size = 0.2; groundMaterial.opacity = 0.3; groundMaterial.vertexColors = false; groundMaterial.color = TARGET_COLOR;
         const groundSystem = new THREE.Points(groundGeo, groundMaterial);
         scene.add(groundSystem);
 
-        // --- System 3: Snow Dust ---
         const snowGeo = new THREE.BufferGeometry();
         const snowPos = [];
         const snowVelocities = [];
-        for(let i=0; i<SNOW_COUNT; i++) {
+        for(let i=0; i<CONFIG.SNOW_COUNT; i++) {
             snowPos.push((Math.random()-0.5)*100, Math.random()*100, (Math.random()-0.5)*100);
             snowVelocities.push(0.1 + Math.random() * 0.2);
         }
         snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
         const snowMaterial = particleMaterial.clone();
-        snowMaterial.size = 0.3;
-        snowMaterial.opacity = 0.6;
-        snowMaterial.vertexColors = false;
-        snowMaterial.color = new THREE.Color(0xffffff);
+        snowMaterial.size = isMobile ? 0.5 : 0.3; snowMaterial.opacity = 0.6; snowMaterial.vertexColors = false; snowMaterial.color = new THREE.Color(0xffffff);
         const snowSystem = new THREE.Points(snowGeo, snowMaterial);
         scene.add(snowSystem);
 
-        // --- System 4: Big Snow Flowers ---
         const flakeGeo = new THREE.BufferGeometry();
         const flakePos = [];
-        const flakeVelocities = []; 
-        const flakeRandomness = []; 
-
-        for(let i = 0; i < FLAKE_COUNT; i++) {
-            flakePos.push(
-                (Math.random() - 0.5) * 100, // X
-                Math.random() * 80,          // Y
-                (Math.random() - 0.5) * 100  // Z
-            );
+        const flakeVelocities = []; const flakeRandomness = []; 
+        for(let i = 0; i < CONFIG.FLAKE_COUNT; i++) {
+            flakePos.push((Math.random() - 0.5) * 100, Math.random() * 80, (Math.random() - 0.5) * 100);
             flakeVelocities.push(0.05 + Math.random() * 0.1);
             flakeRandomness.push(Math.random() * Math.PI * 2);
         }
-
         flakeGeo.setAttribute('position', new THREE.Float32BufferAttribute(flakePos, 3));
         const flakeMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 2, 
-            map: flakeTexture,
-            transparent: true,
-            opacity: 0.9,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            sizeAttenuation: true
+            color: 0xffffff, size: 2, map: flakeTexture, transparent: true, opacity: 0.9,
+            blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
         });
         const flakeSystem = new THREE.Points(flakeGeo, flakeMaterial);
         scene.add(flakeSystem);
 
-        // --- NEW: Detailed Gift Boxes System ---
+        // --- GIFTS ---
         const giftGroup = new THREE.Group();
-        // We will store the individual gift groups here
         const giftMeshes = []; 
         scene.add(giftGroup);
         giftGroup.visible = false; 
 
-        // 1. Define Materials
-        // Wrapping paper material (textured)
-        const paperMat = new THREE.MeshStandardMaterial({ 
+        // --- GIFTS MATERIALS (UPDATED TO LIGHT UP) ---
+        // Increased emissive from dark red (0x330000) to bright red (0xdd0022)
+        const paperMat = new THREE.MeshStandardMaterial({
             map: giftTexture,
+            color: 0xff002b,
             roughness: 0.4,
             metalness: 0.1,
-            emissive: 0xFF0066 // Slight self-illumination
+            emissive: 0xdd0022 // <--- Much brighter red glow
         });
 
-        // Shiny Gold Ribbon Material
+        // Increased emissive from dark yellow (0x222200) to bright pink (0xaa6677)
         const ribbonMat = new THREE.MeshStandardMaterial({
-            color: 0xd4af37, // Gold color
+            color: 0xffff66,
             roughness: 0.2,
-            metalness: 0.8, // High metalness for shine
-            emissive: 0xFFFF33
+            metalness: 0.8,
+            emissive: 0xffff00 // <--- Much brighter pink glow
         });
-
-        // 2. Define Geometries
-        const boxGeo = new THREE.BoxGeometry(3, 3, 3);
-        // Ribbons are slightly larger than the box so they sit on top
-        // Band 1 wraps around the middle horizontally
-        const ribbonGeo1 = new THREE.BoxGeometry(3.05, 3.05, 0.6);
-        // Band 2 wraps around the middle vertically
-        const ribbonGeo2 = new THREE.BoxGeometry(0.6, 3.05, 3.05);
+        const boxSize = isMobile ? 3.5 : 3;
+        const boxGeo = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        const ribbonGeo1 = new THREE.BoxGeometry(boxSize+0.05, boxSize+0.05, 0.6);
+        const ribbonGeo2 = new THREE.BoxGeometry(0.6, boxSize+0.05, boxSize+0.05);
 
         const giftPositions = [
-            { x: 15, y: 5, z: 0 },
-            { x: -15, y: 8, z: 5 },
-            { x: 0, y: -5, z: 15 },
-            { x: 10, y: -2, z: -10 },
-            { x: -12, y: 0, z: -12 },
-            { x: 0, y: 12, z: 0 }
+            { x: 15, y: 5, z: 0 }, { x: -15, y: 8, z: 5 }, { x: 0, y: -5, z: 15 },
+            { x: 10, y: -2, z: -10 }, { x: -12, y: 0, z: -12 }, { x: 0, y: 12, z: 0 }
         ];
 
         for(let i=0; i<6; i++) {
-            // Create a group for this specific gift
             const thisGiftGrp = new THREE.Group();
-
-            // Create the meshes
-            const boxMesh = new THREE.Mesh(boxGeo, paperMat);
-            const ribbonMesh1 = new THREE.Mesh(ribbonGeo1, ribbonMat);
-            const ribbonMesh2 = new THREE.Mesh(ribbonGeo2, ribbonMat);
-            
-            // Add meshes to the local group
-            thisGiftGrp.add(boxMesh);
-            thisGiftGrp.add(ribbonMesh1);
-            thisGiftGrp.add(ribbonMesh2);
-
-            // Position the whole group
-            if(i < giftPositions.length) {
-                thisGiftGrp.position.set(giftPositions[i].x, giftPositions[i].y, giftPositions[i].z);
-            }
+            thisGiftGrp.add(new THREE.Mesh(boxGeo, paperMat));
+            thisGiftGrp.add(new THREE.Mesh(ribbonGeo1, ribbonMat));
+            thisGiftGrp.add(new THREE.Mesh(ribbonGeo2, ribbonMat));
+            if(i < giftPositions.length) thisGiftGrp.position.set(giftPositions[i].x, giftPositions[i].y, giftPositions[i].z);
             thisGiftGrp.rotation.set(Math.random(), Math.random(), Math.random());
-            
-            // ATTACH DATA TO THE GROUP so raycaster can find it later
-            // We set an initial one, but on click we will Randomize it
             thisGiftGrp.userData = { imageUrl: GIFT_IMAGES[0] };
-            
-            // Add local group to main gift group
             giftGroup.add(thisGiftGrp);
-            // Store the group for animation/interaction
             giftMeshes.push(thisGiftGrp);
         }
 
-        // --- Star Topper ---
+        // --- TOPPER ---
         const starShape = new THREE.Shape();
         for (let i = 0; i < 10; i++) {
             const rad = i % 2 === 0 ? 1.2 : 0.6;
@@ -364,35 +303,22 @@
         }
         const topperGeo = new THREE.ExtrudeGeometry(starShape, { depth: 0.4, bevelEnabled: false });
         topperGeo.center();
-        const topperMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
-        const topper = new THREE.Mesh(topperGeo, topperMat);
+        const topper = new THREE.Mesh(topperGeo, new THREE.MeshBasicMaterial({ color: 0xffffee }));
         topper.position.y = 17.7;
         topper.scale.set(0,0,0);
         scene.add(topper);
 
-        // --- Logic ---
         function generateTree() {
-            const height = 28;
-            const turns = 12; 
-            const maxRadius = 9;
-            const ribbonWidth = 2.5; 
-
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const p = i / PARTICLE_COUNT;
+            const height = 28; const turns = 12; const maxRadius = 9; const ribbonWidth = 2.5; 
+            for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
+                const p = i / CONFIG.PARTICLE_COUNT;
                 const inverseP = 1 - p; 
-                let y = -12.5 + p * height;
-                y += (Math.random() - 0.5) * 0.7;
-                const baseRadius = maxRadius * Math.pow(inverseP, 1.2); 
-                const radiusSpread = (Math.random() - 0.5) * ribbonWidth;
-                const finalRadius = baseRadius + radiusSpread;
+                let y = -12.5 + p * height + (Math.random() - 0.5) * 0.7;
+                const radius = maxRadius * Math.pow(inverseP, 1.2) + (Math.random() - 0.5) * ribbonWidth;
                 const angle = p * Math.PI * 2 * turns;
-                const x = Math.cos(angle) * finalRadius;
-                const z = Math.sin(angle) * finalRadius;
+                const x = Math.cos(angle) * radius; const z = Math.sin(angle) * radius;
 
-                treePositions[i*3] = x;
-                treePositions[i*3+1] = y;
-                treePositions[i*3+2] = z;
-                
+                treePositions[i*3] = x; treePositions[i*3+1] = y; treePositions[i*3+2] = z;
                 currentPositionsAttribute.setXYZ(i, x, y, z);
                 colorsAttribute.setXYZ(i, 0, 0, 0); 
                 blinkOffsets[i] = Math.random() * Math.PI * 2;
@@ -408,16 +334,16 @@
 
         const loader = new FontLoader();
         loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
-            const geometry = new TextGeometry('PICK A GIFT', {
-                font: font, size: 4, height: 0.2, curveSegments: 12,
+            const textSize = isMobile ? 3.0 : 4;
+            const geometry = new TextGeometry('ONE MORE THING', {
+                font: font, size: textSize, height: 0.2, curveSegments: 12,
                 bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 5
             });
             geometry.center();
             const textMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
             const sampler = new MeshSurfaceSampler(textMesh).build();
             const tempPosition = new THREE.Vector3();
-
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
+            for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
                 sampler.sample(tempPosition);
                 textPositions[i*3] = tempPosition.x;
                 textPositions[i*3+1] = tempPosition.y + 5;
@@ -425,18 +351,57 @@
             }
         });
 
+        // --- EVENTS ---
+        let pointerDownTime = 0;
+        let isStarted = false;
+
+        window.addEventListener('pointerdown', (e) => { pointerDownTime = Date.now(); });
+        window.addEventListener('pointerup', onPointerUp);
+
+        function onPointerUp(event) {
+            if (Date.now() - pointerDownTime > 300) return; 
+            
+            if (!isStarted) {
+                isStarted = true;
+                init();
+                return;
+            }
+
+            if (currentState === STATES.EXPLODED) {
+                const mouse = new THREE.Vector2();
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(giftMeshes, true);
+                if (intersects.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * GIFT_IMAGES.length);
+                    showModal(GIFT_IMAGES[randomIndex]);
+                    return; 
+                }
+            }
+            handleClick();
+        }
+
         function init() {
-            // 1. Show the first message immediately
             messageElement.innerText = messages[0]; 
             messageIndex = 1;
+            
+            // --- AUDIO FIX ---
             const audio = document.getElementById('bg-music');
-            audio.play().catch(function(error) {
-                console.log("Music blocked by browser. Visuals will still run.");
-            });
+            audio.volume = 0.5; 
+            
+            // Try playing audio and catch any errors
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {
+                    console.log("Audio playing");
+                })
+                .catch(error => {
+                    console.error("Audio playback prevented:", error);
+                });
+            }
+            
             generateTree();
-            
-            // REMOVED setInterval from here! It starts in animateLightUp now.
-            
             currentPositionsAttribute.needsUpdate = true;
             colorsAttribute.needsUpdate = true;
             animateLightUp();
@@ -446,13 +411,11 @@
         function animateLightUp() {
             const animData = { height: -15 }; 
             gsap.to(animData, {
-                height: 15,
-                duration: 6,
-                ease: "power1.inOut",
+                height: 15, duration: 6, ease: "power1.inOut",
                 onUpdate: () => {
                     const positions = currentPositionsAttribute.array;
                     const colors = colorsAttribute.array;
-                    for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
                         const y = positions[i * 3 + 1];
                         if (y < animData.height) {
                             let brightness = 1;
@@ -466,15 +429,9 @@
                     colorsAttribute.needsUpdate = true;
                 },
                 onComplete: () => {
-                    // Show UI
                     document.getElementById('ui-container').style.opacity = 1;
-                    
-                    // Show Star
                     gsap.to(topper.scale, { x: 1, y: 1, z: 1, duration: 1, ease: "back.out(1.7)" });
-                    
-                    // FIX: Start the message interval HERE, so it doesn't skip the first message
                     setInterval(changeMessage, 4000);
-                    
                     isLightUpComplete = true;
                 }
             });
@@ -482,54 +439,47 @@
         
         function animate() {
             requestAnimationFrame(animate);
+            
+            // --- AUTO ROTATE LOGIC ---
+            if(currentState === STATES.TREE || currentState === STATES.EXPLODED ||currentState === STATES.TEXT) {
+                controls.autoRotate = true;
+                topper.rotation.y += 0.02; 
+            } else {
+                controls.autoRotate = false;
+            }
             controls.update();
 
             const time = Date.now() * 0.001; 
 
-            // 1. Slow Tree Rotation
-            if(currentState === STATES.TREE) {
-                particleSystem.rotation.y += 0.003; 
-                topper.rotation.y += 0.02; 
-            }
-
-            // Animate Gifts (Floating and spinning)
             if(giftGroup.visible) {
                 giftMeshes.forEach((grp, i) => {
-                    grp.rotation.x += 0.005;
-                    grp.rotation.y += 0.01;
-                    // Gentle floating
+                    grp.rotation.x += 0.005; grp.rotation.y += 0.01;
                     grp.position.y += Math.sin(time + i) * 0.015; 
                 });
             }
 
-            // 2. Color Changing & Blinking
             if (isLightUpComplete && currentState === STATES.TREE) {
                 const colors = colorsAttribute.array;
                 const tempColor = new THREE.Color();
                 const globalHue = (time * 0.05) % 1; 
-
-                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
                     const blink = 0.6 + 0.4 * Math.sin(time * 3 + blinkOffsets[i]);
                     tempColor.setHSL(globalHue, 1.0, 0.5 * blink);
-                    colors[i*3] = tempColor.r;
-                    colors[i*3+1] = tempColor.g;
-                    colors[i*3+2] = tempColor.b;
+                    colors[i*3] = tempColor.r; colors[i*3+1] = tempColor.g; colors[i*3+2] = tempColor.b;
                 }
                 colorsAttribute.needsUpdate = true;
                 topper.material.color.setHSL(globalHue, 1.0, 0.7);
             }
 
-            // 3. Snow Dust
             const snowPositions = snowSystem.geometry.attributes.position.array;
-            for(let i=0; i<SNOW_COUNT; i++) {
+            for(let i=0; i<CONFIG.SNOW_COUNT; i++) {
                 snowPositions[i*3+1] -= snowVelocities[i];
                 if(snowPositions[i*3+1] < -20) snowPositions[i*3+1] = 60;
             }
             snowSystem.geometry.attributes.position.needsUpdate = true;
 
-            // 4. Big Snow Flowers
             const flakePositions = flakeSystem.geometry.attributes.position.array;
-            for(let i = 0; i < FLAKE_COUNT; i++) {
+            for(let i = 0; i < CONFIG.FLAKE_COUNT; i++) {
                 flakePositions[i*3 + 1] -= flakeVelocities[i];
                 flakePositions[i*3] += Math.sin(time + flakeRandomness[i]) * 0.02;
                 if (flakePositions[i*3 + 1] < -20) {
@@ -541,19 +491,21 @@
             flakeSystem.geometry.attributes.position.needsUpdate = true;
             flakeSystem.rotation.y -= 0.001;
 
-            composer.render();
+            if (CONFIG.ENABLE_BLOOM && composer) {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
+            }
         }
 
-        // --- Interaction ---
         const tweenData = { t: 0 }; 
-
         function transitionTo(targetPosTypedArray) {
             tweenData.t = 0;
             const startPositions = new Float32Array(currentPositionsAttribute.array);
             gsap.to(tweenData, {
                 t: 1, duration: 1.8, ease: "power2.inOut",
                 onUpdate: () => {
-                    for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
                         const ix = i*3; const iy = i*3+1; const iz = i*3+2;
                         currentPositionsAttribute.array[ix] = THREE.MathUtils.lerp(startPositions[ix], targetPosTypedArray[ix], tweenData.t);
                         currentPositionsAttribute.array[iy] = THREE.MathUtils.lerp(startPositions[iy], targetPosTypedArray[iy], tweenData.t);
@@ -563,67 +515,19 @@
                 }
             });
             
-            // Topper Logic
-            if (currentState === STATES.TREE) {
-                gsap.to(topper.scale, { x: 1, y: 1, z: 1, duration: 1, delay: 0.5 });
-            }
+            if (currentState === STATES.TREE) gsap.to(topper.scale, { x: 1, y: 1, z: 1, duration: 1, delay: 0.5 });
 
-            // NEW: Gift Logic
-            // FIX: Using STATES.EXPLODED
             if (currentState === STATES.EXPLODED) { 
                 giftGroup.visible = true;
-                // Animate in the GROUPS
                 giftMeshes.forEach(grp => {
                     grp.scale.set(0,0,0);
                     gsap.to(grp.scale, {x:1, y:1, z:1, duration: 1, ease: "back.out(1.7)", delay: 0.5});
                 });
             } else { 
-                // Animate out the GROUPS
                 giftMeshes.forEach(grp => {
                     gsap.to(grp.scale, {x:0, y:0, z:0, duration: 0.5, onComplete: () => { giftGroup.visible = false; }});
                 });
             }
-        }
-
-        window.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('mouseup', onMouseUp);
-        window.addEventListener('click', onMouseClick);
-        let mouseDownTime = 0;
-        var FirstClick = true;
-
-        function onMouseClick(){
-            if (FirstClick == false) return;
-            init();
-            FirstClick = false;
-        }
-
-        function onMouseDown() { mouseDownTime = Date.now(); }
-        
-        function onMouseUp(event) {
-            if (Date.now() - mouseDownTime > 200) return;
-            if (FirstClick) return;
-
-            // Raycast for Gifts IF we are in Exploded state
-            // FIX: Using STATES.EXPLODED
-            if (currentState === STATES.EXPLODED) {
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-                raycaster.setFromCamera(mouse, camera);
-                // Check intersection with gift groups (it will hit children)
-                const intersects = raycaster.intersectObjects(giftMeshes, true);
-
-                if (intersects.length > 0) {
-                    // NEW: Random image on every click
-                    const randomIndex = Math.floor(Math.random() * GIFT_IMAGES.length);
-                    const imgUrl = GIFT_IMAGES[randomIndex];
-                    
-                    showModal(imgUrl);
-                    return; 
-                }
-            }
-
-            handleClick();
         }
 
         function handleClick() {
@@ -632,16 +536,12 @@
                 topper.visible = false;
                 currentState = STATES.TEXT; 
                 transitionTo(textPositions);
-                particleSystem.rotation.y = 0; 
-                isLightUpComplete = false; 
+                particleSystem.rotation.y = 0; isLightUpComplete = false; 
             } else if (currentState === STATES.TEXT) {
                 document.getElementById('ui-container').style.display = 'none';
                 topper.visible = false;
-                
-                // FIX: Transition to EXPLODED state properly
                 currentState = STATES.EXPLODED;
                 transitionTo(explodedPositions);
-
             } else if (currentState === STATES.EXPLODED) {
                 document.getElementById('ui-container').style.display = 'none';
                 topper.visible = false;
@@ -649,67 +549,43 @@
                 currentState = STATES.RESET;
             } else {
                 document.getElementById('ui-container').style.display = 'block';
+                topper.visible = true;
+                topper.scale.set(0,0,0); 
                 currentState = STATES.TREE;
                 transitionTo(treePositions);    
                 isLightUpComplete = true; 
             }
         }
         
-        // Modal Logic
         const modal = document.getElementById('image-modal');
         const modalImg = document.getElementById('modal-content');
-        
         function showModal(url) {
-            modalImg.src = url;
-            modal.style.display = 'flex';
+            modalImg.src = url; modal.style.display = 'flex';
         }
-
-        modal.onclick = function() {
-            modal.style.display = 'none';
-        }
+        modal.onclick = function() { modal.style.display = 'none'; }
         
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
+            if(composer) composer.setSize(window.innerWidth, window.innerHeight);
         });
 
-    // List of messages to cycle through
-    const messages = [
-        "Quỳnh này🎀",
-        "Nay NOEL",
-        "Xa quá",
-        "Không đi chơi được rồi",
-        "Thôi thì tặng em một nhóm lửa",
-        "Để tan chảy trái tym băng giá",
-        "An lành nhé!"
-    ];
-
-    let messageIndex = 0;
-    const messageElement = document.getElementById('message');
-
-    function changeMessage() {
-        // 1. Start fading out
-        messageElement.classList.add('fade-out');
-
-        // 2. Wait for the fade-out to finish (1000ms = 1s, matching CSS)
-        setTimeout(() => {
-            if (messageIndex >= messages.length) {
-                messageElement.style.display = 'None';
-            }
-
-            // Change the text while it is invisible
-            messageElement.innerText = messages[messageIndex];
-        
-            // Increment index and loop back to 0 if at end
-            messageIndex = (messageIndex + 1);
-
-            // 3. Fade back in
-            messageElement.classList.remove('fade-out');
-        }, 1500); // This number must match your CSS transition time
-    };
-
+        const messages = [
+            "Quỳnh này🎀", "Hôm nay NOEL", "Đà Nẵng xa Hà Nội quá", "Không đi chơi được rồi",
+            "Cố gắng ôn thi nốt ngày mai nhé", "Giang Sinh An lành!"
+        ];
+        let messageIndex = 0;
+        const messageElement = document.getElementById('message');
+        function changeMessage() {
+            messageElement.classList.add('fade-out');
+            setTimeout(() => {
+                if (messageIndex >= messages.length) messageElement.style.display = 'None';
+                messageElement.innerText = messages[messageIndex];
+                messageIndex = (messageIndex + 1);
+                messageElement.classList.remove('fade-out');
+            }, 1500); 
+        };
     </script>
 </body>
 </html>
